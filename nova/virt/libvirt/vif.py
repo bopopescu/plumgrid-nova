@@ -268,6 +268,19 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
 
         return conf
 
+    def get_config_plumgrid(self, instance, network, mapping, image_meta,
+                            inst_type):
+        conf = super(LibvirtGenericVIFDriver,
+                     self).get_config(instance,
+                                      network,
+                                      mapping,
+                                      image_meta, inst_type)
+
+        dev = self.get_vif_devname(mapping)
+        designer.set_vif_host_backend_ethernet_config(conf, dev)
+
+        return conf
+
     def get_config(self, instance, network, mapping, image_meta, inst_type):
         vif_type = mapping.get('vif_type')
 
@@ -300,7 +313,12 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
                                           network, mapping,
                                           image_meta,
                                           inst_type)
-        else:
+        elif vif_type == network_model.VIF_TYPE_OTHER:
+            return self.get_config_plumgrid(instance,
+                                          network, mapping,
+                                          image_meta,
+                                          inst_type)
+	else:
             raise exception.NovaException(
                 _("Unexpected vif_type=%s") % vif_type)
 
@@ -392,6 +410,26 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
         super(LibvirtGenericVIFDriver,
               self).plug(instance, vif)
 
+    def plug_plumgrid(self, instance, vif):
+        super(LibvirtGenericVIFDriver,
+              self).plug(instance, vif)
+
+        self.smart_edge_command = '/opt/pg/bin/0/ifc_ctl'
+        try:
+            network, mapping = vif
+            dev = self.get_vif_devname(mapping)
+            iface_id = mapping['vif_uuid']
+            linux_net.create_tap_dev(dev)
+            net_id = network['id']
+            tenant_id = instance["project_id"]
+            utils.execute(self.smart_edge_command, 'gateway', 'add_port', dev)
+            utils.execute(self.smart_edge_command, 'gateway', 'ifup', dev,
+                          'access_vm', mapping['label'] + "_" + iface_id,
+                          mapping['mac'], 'pgtag2=%s' % net_id,
+                          'pgtag1=%s' % tenant_id)
+        except exception.ProcessExecutionError:
+            LOG.exception(_("Failed while plugging vif"), instance=instance)
+
     def plug(self, instance, vif):
         network, mapping = vif
         vif_type = mapping.get('vif_type')
@@ -413,7 +451,9 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
             self.plug_802qbg(instance, vif)
         elif vif_type == network_model.VIF_TYPE_802_QBH:
             self.plug_802qbh(instance, vif)
-        else:
+        elif vif_type == network_model.VIF_TYPE_OTHER:
+            self.plug_plumgrid(instance, vif)
+	else:
             raise exception.NovaException(
                 _("Unexpected vif_type=%s") % vif_type)
 
@@ -479,6 +519,21 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
         super(LibvirtGenericVIFDriver,
               self).unplug(instance, vif)
 
+    def unplug_plumgrid(self, instance, vif):
+        super(LibvirtGenericVIFDriver,
+              self).unplug(instance, vif)
+        try:
+            network, mapping = vif
+            iface_id = mapping['vif_uuid']
+            dev = self.get_vif_devname(mapping)
+            utils.execute(self.smart_edge_command, 'gateway', 'ifdown',
+                          dev, 'access_vm', mapping['label'] + "_" + iface_id,
+                          mapping['mac'])
+            utils.execute(self.smart_edge_command, 'gateway', 'del_port', dev)
+            linux_net.delete_tap_dev(dev)
+        except exception.ProcessExecutionError:
+            LOG.exception(_("Failed while unplugging vif"), instance=instance)
+
     def unplug(self, instance, vif):
         network, mapping = vif
         vif_type = mapping.get('vif_type')
@@ -500,7 +555,9 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
             self.unplug_802qbg(instance, vif)
         elif vif_type == network_model.VIF_TYPE_802_QBH:
             self.unplug_802qbh(instance, vif)
-        else:
+        elif vif_type == network_model.VIF_TYPE_OTHER:
+            self.unplug_plumgrid(instance, vif)
+	else:
             raise exception.NovaException(
                 _("Unexpected vif_type=%s") % vif_type)
 
