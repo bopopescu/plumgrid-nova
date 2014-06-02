@@ -414,7 +414,7 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
         super(LibvirtGenericVIFDriver,
               self).plug(instance, vif)
 
-        self.smart_edge_command = '/opt/pg/bin/0/ifc_ctl'
+        smart_edge_command = '/opt/pg/bin/ifc_ctl'
         try:
             network, mapping = vif
             dev = self.get_vif_devname(mapping)
@@ -422,8 +422,8 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
             linux_net.create_tap_dev(dev)
             net_id = network['id']
             tenant_id = instance["project_id"]
-            utils.execute(self.smart_edge_command, 'gateway', 'add_port', dev)
-            utils.execute(self.smart_edge_command, 'gateway', 'ifup', dev,
+            utils.execute(smart_edge_command, 'gateway', 'add_port', dev)
+            utils.execute(smart_edge_command, 'gateway', 'ifup', dev,
                           'access_vm', mapping['label'] + "_" + iface_id,
                           mapping['mac'], 'pgtag2=%s' % net_id,
                           'pgtag1=%s' % tenant_id)
@@ -522,14 +522,15 @@ class LibvirtGenericVIFDriver(LibvirtBaseVIFDriver):
     def unplug_plumgrid(self, instance, vif):
         super(LibvirtGenericVIFDriver,
               self).unplug(instance, vif)
+        smart_edge_command = '/opt/pg/bin/ifc_ctl'
         try:
             network, mapping = vif
             iface_id = mapping['vif_uuid']
             dev = self.get_vif_devname(mapping)
-            utils.execute(self.smart_edge_command, 'gateway', 'ifdown',
+            utils.execute(smart_edge_command, 'gateway', 'ifdown',
                           dev, 'access_vm', mapping['label'] + "_" + iface_id,
                           mapping['mac'])
-            utils.execute(self.smart_edge_command, 'gateway', 'del_port', dev)
+            utils.execute(smart_edge_command, 'gateway', 'del_port', dev)
             linux_net.delete_tap_dev(dev)
         except exception.ProcessExecutionError:
             LOG.exception(_("Failed while unplugging vif"), instance=instance)
